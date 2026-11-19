@@ -1,0 +1,119 @@
+{
+  "category": "refrigerator",
+  "procedure": {
+    "id": "whirlpool-wrs321sdhv-warm",
+    "revision": 1,
+    "model": "WRS321SDHV",
+    "complaint": "refrigerator-warm",
+    "synthetic": false,
+    "reviewed": false,
+    "reviewer": null,
+    "reviewedAt": null,
+    "applicabilityNote": "This draft covers only the listed WRS321SDHV model strings. No serial-number cutoff is recorded; confirm the exact unit against its product Tech Sheet and do not apply this guide to another suffix.",
+    "source": {
+      "title": "Whirlpool Side-by-Side Refrigerator Service Manual",
+      "revision": "W11296289 (©2018)",
+      "page": "1-11, 2-2–2-5, 3-3",
+      "url": "https://www.whirlpool.com/content/dam/global/documents/202403/Service-Manual-W11296289-Side-X-Side-Refrigerator.pdf",
+      "synthetic": false
+    }
+  },
+  "modelAliases": [
+    "WRS321SDHV",
+    "WRS321SDHV00",
+    "WRS321SDHV01",
+    "WRS321SDHV02"
+  ],
+  "questions": [
+    {
+      "id": "warmCompartments",
+      "label": "Which compartment is not maintaining its expected condition?",
+      "type": "CHOICE",
+      "unit": null,
+      "choices": ["FRESH_FOOD_ONLY", "FREEZER_ONLY", "BOTH", "UNKNOWN"]
+    },
+    {
+      "id": "freshFoodTemperature",
+      "label": "Enter the already measured fresh-food compartment temperature.",
+      "type": "NUMBER",
+      "unit": "°F",
+      "choices": []
+    },
+    {
+      "id": "freezerTemperature",
+      "label": "Enter the already measured freezer compartment temperature.",
+      "type": "NUMBER",
+      "unit": "°F",
+      "choices": []
+    }
+  ],
+  "followUpQuestions": [
+    {
+      "id": "serviceModeRcSensorResult",
+      "label": "For a qualified technician: record the result shown by the cited manual's service-mode Step 3 (RC sensor). Use the manual for the model-specific sequence; do not perform voltage tests from this prompt.",
+      "type": "CHOICE",
+      "unit": null,
+      "choices": ["PASS", "OPEN", "SHORT", "BLANK"]
+    },
+    {
+      "id": "serviceModeFcSensorResult",
+      "label": "For a qualified technician: record the result shown by the cited manual's service-mode Step 1 (FC sensor). Use the manual for the model-specific sequence; do not perform voltage tests from this prompt.",
+      "type": "CHOICE",
+      "unit": null,
+      "choices": ["PASS", "OPEN", "SHORT", "BLANK"]
+    }
+  ],
+  "branches": [
+    {
+      "whenAnswers": {
+        "serviceModeRcSensorResult": ["OPEN", "SHORT"],
+        "serviceModeFcSensorResult": ["OPEN", "SHORT"]
+      },
+      "translationKey": "whirlpoolWarm.bothSensors",
+      "causeCode": "OTHER",
+      "cause": "The cited service-mode checks flagged both RC and FC sensor circuits. This does not identify whether a sensor or its wiring is the cause.",
+      "evidence": ["serviceModeRcSensorResult", "serviceModeFcSensorResult"],
+      "limitation": "This is a circuit indication only. Confirm the exact unit configuration and follow its Tech Sheet before replacing parts.",
+      "steps": [
+        "Record both displayed results and the exact model suffix.",
+        "Use the unit's Tech Sheet to distinguish the sensor from its harness. Disconnect power before servicing and restore all panels before operation."
+      ]
+    },
+    {
+      "whenAnswers": {"serviceModeRcSensorResult": ["OPEN", "SHORT"]},
+      "translationKey": "whirlpoolWarm.rcSensor",
+      "causeCode": "OTHER",
+      "cause": "The cited service-mode Step 3 flagged the RC sensor circuit open or short. This does not prove the sensor itself has failed.",
+      "evidence": ["serviceModeRcSensorResult"],
+      "limitation": "Confirm the exact unit configuration and follow its Tech Sheet before replacing parts.",
+      "steps": [
+        "Record the displayed result and the exact model suffix.",
+        "Use the unit's Tech Sheet to distinguish the sensor from its harness. Disconnect power before servicing and restore all panels before operation."
+      ]
+    },
+    {
+      "whenAnswers": {"serviceModeFcSensorResult": ["OPEN", "SHORT"]},
+      "translationKey": "whirlpoolWarm.fcSensor",
+      "causeCode": "OTHER",
+      "cause": "The cited service-mode Step 1 flagged the FC sensor circuit open or short. This does not prove the sensor itself has failed.",
+      "evidence": ["serviceModeFcSensorResult"],
+      "limitation": "Confirm the exact unit configuration and follow its Tech Sheet before replacing parts.",
+      "steps": [
+        "Record the displayed result and the exact model suffix.",
+        "Use the unit's Tech Sheet to distinguish the sensor from its harness. Disconnect power before servicing and restore all panels before operation."
+      ]
+    }
+  ],
+  "fallback": {
+    "whenAnswers": {},
+    "translationKey": "whirlpoolWarm.inconclusive",
+    "causeCode": "OTHER",
+    "cause": "These observations do not establish a failed component. The sensor checks did not report an open or short circuit, or usable results were not recorded.",
+    "evidence": ["warmCompartments", "freshFoodTemperature", "freezerTemperature", "serviceModeRcSensorResult", "serviceModeFcSensorResult"],
+    "limitation": "The cited manual does not provide a warm-symptom cause from these observations alone. No cooling-system or electrical fault is confirmed.",
+    "steps": [
+      "Keep the recorded compartment readings with the case.",
+      "Continue only with the Tech Sheet supplied for the exact unit. Its service manual says the wiring diagram is typical and directs technicians to the product Tech Sheet."
+    ]
+  }
+}

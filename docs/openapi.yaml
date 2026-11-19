@@ -1,0 +1,719 @@
+openapi: 3.1.0
+info:
+  title: SuperFix
+  version: 0.1.0
+  description: >
+    Company administration and appliance repair assistance. Before each mutating request,
+    obtain a token from GET /auth/csrf and send it in the returned header. Keep the SESSION
+    cookie and fetch a new CSRF token after sign-in. Validation and domain conflicts may
+    return a problem object with a stable detail code.
+servers:
+  - url: /api/v1
+security:
+  - session: []
+paths:
+  /auth/csrf:
+    get:
+      summary: Get the CSRF header name and token
+      security: []
+      responses:
+        '200':
+          description: CSRF token for the current browser session
+          content:
+            application/json:
+              schema: {type: object, required: [header, token], properties: {header: {type: string}, token: {type: string}}}
+  /auth/login:
+    post:
+      summary: Sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: {type: object, required: [email, password], properties: {email: {type: string}, password: {type: string}}}
+      responses: {'204': {description: Signed in}, '401': {description: Invalid credentials}, '429': {description: Login limit reached}}
+  /auth/logout:
+    post:
+      summary: End the current session
+      responses: {'204': {description: Signed out}}
+  /auth/me:
+    get:
+      summary: Get the signed-in account and the current session's offline expiry
+      responses: {'200': {description: User and server-issued offline access expiry}, '401': {description: No active session}}
+  /auth/password:
+    post:
+      summary: Change password and end existing sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [currentPassword, password], properties: {currentPassword: {type: string}, password: {type: string, minLength: 8}}}
+      responses: {'204': {description: Password changed}}
+  /admin/plans:
+    get:
+      summary: List plans as a platform administrator
+      parameters: [{$ref: '#/components/parameters/page'}]
+      responses: {'200': {description: Page of plans}}
+    post:
+      summary: Create a plan as a platform administrator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [name, maxUsers], properties: {name: {type: string, maxLength: 80}, maxUsers: {type: integer, minimum: 1}, monthlyAiLimit: {type: [integer, 'null'], minimum: 1}}}
+      responses: {'200': {description: Created plan}}
+  /admin/companies:
+    get:
+      summary: List companies as a platform administrator
+      parameters: [{$ref: '#/components/parameters/page'}]
+      responses: {'200': {description: Page of companies}}
+    post:
+      summary: Create a company as a platform administrator
+      requestBody: {$ref: '#/components/requestBodies/company'}
+      responses: {'200': {description: Created company}}
+  /admin/companies/{company}:
+    parameters: [{$ref: '#/components/parameters/company'}]
+    put:
+      summary: Edit a company or change its plan
+      requestBody: {$ref: '#/components/requestBodies/company'}
+      responses: {'200': {description: Updated company}, '409': {description: Seat limit exceeded}}
+  /admin/companies/{company}/users:
+    parameters: [{$ref: '#/components/parameters/company'}]
+    get:
+      summary: List users in an administered company
+      parameters: [{$ref: '#/components/parameters/page'}]
+      responses: {'200': {description: Page of company users}}
+    post:
+      summary: Provision a company user with a temporary password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name, password, role]
+              properties:
+                email: {type: string, format: email}
+                name: {type: string, maxLength: 120}
+                password: {type: string, minLength: 8}
+                role: {type: string, enum: [TECHNICIAN, COMPANY_ADMIN]}
+      responses: {'200': {description: Provisioned user}, '409': {description: Duplicate email or seat limit exceeded}}
+  /admin/companies/{company}/users/{id}/active:
+    parameters: [{$ref: '#/components/parameters/company'}, {$ref: '#/components/parameters/id'}]
+    put:
+      summary: Enable or disable a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [active], properties: {active: {type: boolean}}}
+      responses: {'200': {description: Updated user}, '409': {description: Seat limit exceeded}}
+  /admin/companies/{company}/users/{id}/password:
+    parameters: [{$ref: '#/components/parameters/company'}, {$ref: '#/components/parameters/id'}]
+    put:
+      summary: Set a temporary password and revoke existing sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [password], properties: {password: {type: string, minLength: 8}}}
+      responses: {'204': {description: Temporary password set}}
+  /categories:
+    get:
+      summary: Get active appliance categories
+      responses: {'200': {description: Categories with stable codes and English fallback labels}}
+  /settings:
+    get:
+      summary: Get the current AI mode
+      responses: {'200': {description: Boolean demo flag}}
+  /cases:
+    get:
+      summary: List visible repair cases
+      parameters:
+        - {$ref: '#/components/parameters/page'}
+        - {name: category, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/status'}}
+        - {name: archived, in: query, description: List archived cases instead of active cases, schema: {type: boolean, default: false}}
+        - {name: search, in: query, description: Partial job reference or exact appliance serial number, schema: {type: string, maxLength: 120}}
+      responses: {'200': {description: Page of case summaries}}
+    post:
+      summary: Create a draft
+      description: A retry using the same company-scoped Idempotency-Key returns the original case.
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/intake'}
+      responses: {'201': {description: Created or recovered repair case}}
+  /team/technicians:
+    get:
+      summary: List active technicians in the current company for a company administrator
+      responses: {'200': {description: Active same-company technicians}, '403': {description: Company administrator required}}
+  /cases/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      summary: Read case details and diagnostic history
+      responses: {'200': {$ref: '#/components/responses/case'}, '404': {description: Case unavailable}}
+    put:
+      summary: Edit draft intake
+      parameters: [{$ref: '#/components/parameters/version'}]
+      requestBody: {$ref: '#/components/requestBodies/intake'}
+      responses: {'200': {$ref: '#/components/responses/case'}}
+    delete:
+      summary: Permanently delete an archived case and its stored history
+      description: Company administrators and the assigned technician only. Refuses cases that still have callback cases. Removes case records, photos, and case timeline events.
+      parameters: [{$ref: '#/components/parameters/version'}]
+      responses: {'204': {description: Archived case deleted}, '403': {description: Case is not visible to the user}, '409': {description: Case is not archived, has callbacks, or the version is stale}}
+  /cases/{id}/archive:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Archive a closed repair from the active history list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [version], properties: {version: {type: integer, minimum: 0}}}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Case is not closed or the version is stale}}
+  /cases/{id}/restore:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Restore a closed repair to the active history list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [version], properties: {version: {type: integer, minimum: 0}}}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Case is not archived or the version is stale}}
+  /cases/{id}/photos:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Upload a draft photo
+      parameters:
+        - {$ref: '#/components/parameters/idempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {type: object, required: [file], properties: {file: {type: string, format: binary}, kind: {type: string, enum: [SYMPTOM, MODEL_PLATE], default: SYMPTOM}}}
+      responses: {'200': {$ref: '#/components/responses/case'}, '413': {description: Photo too large}}
+  /cases/{id}/conversation:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: beforeSequence, in: query, required: false, description: Return messages before this sequence, schema: {type: integer, minimum: 1}}
+      - {name: limit, in: query, required: false, description: Page size is clamped to 1–100, schema: {type: integer, default: 40, minimum: 1, maximum: 100}}
+    get:
+      summary: Read a chronological page of the case-scoped technician conversation and handoff
+      responses: {'200': {$ref: '#/components/responses/conversation'}}
+  /cases/{id}/conversation/start:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Start or resume conversational diagnosis for an open case
+      description: Idempotently opens chat. Saved intake and legacy diagnostic history become context; an empty intake does not trigger an AI request until the technician sends a message.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [key, version], properties: {key: {type: string, format: uuid}, version: {type: integer, minimum: 0}}}
+      responses: {'200': {$ref: '#/components/responses/conversation'}, '409': {description: Case is processing, paused, closed, or stale}}
+  /cases/{id}/conversation/messages:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Save a technician message and queue one assistant response
+      description: Message content is stored before the provider call. Photo IDs must belong to this case. Reuse key after an uncertain transport failure; reconnecting does not automatically submit a local draft.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, version, photoIds]
+              properties:
+                key: {type: string, format: uuid}
+                version: {type: integer, minimum: 0}
+                text: {type: [string, 'null'], maxLength: 4000}
+                photoIds: {type: array, maxItems: 12, items: {type: string, format: uuid}}
+      responses: {'201': {$ref: '#/components/responses/conversation'}, '409': {description: Another turn is pending, case changed, or conversation unavailable}}
+  /cases/{id}/conversation/messages/{messageId}/retry:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: messageId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Retry an assistant response for a saved technician message
+      description: Does not create a second technician message; each provider attempt is counted toward configured limits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [key, version], properties: {key: {type: string, format: uuid}, version: {type: integer, minimum: 0}}}
+      responses: {'200': {$ref: '#/components/responses/conversation'}, '409': {description: Turn is not failed or another turn is pending}}
+  /cases/{id}/conversation/continue-to-work:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Save the technician's editable handoff and enter repair work
+      description: Diagnosis is optional. This transition remains available while a turn is pending or has failed, and does not record an AI suggestion as a confirmed cause.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, version]
+              properties:
+                key: {type: string, format: uuid}
+                version: {type: integer, minimum: 0}
+                summary: {type: [string, 'null'], maxLength: 4000}
+                possibleCause: {type: [string, 'null'], maxLength: 1000}
+                evidence: {type: array, maxItems: 12, items: {type: string, maxLength: 500}}
+                unresolved: {type: array, maxItems: 12, items: {type: string, maxLength: 500}}
+                source: {type: [string, 'null'], enum: [TECHNICIAN, AI_ACCEPTED, UNDETERMINED, null]}
+      responses: {'200': {$ref: '#/components/responses/conversation'}, '409': {description: Case is paused, closed, or stale}}
+  /cases/{id}/callbacks:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Create a new callback draft linked to a closed repair
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symptoms, hazard]
+              properties:
+                symptoms: {type: string, maxLength: 4000}
+                hazard: {type: [boolean, 'null'], description: Null means not checked or unknown.}
+                fuel: {type: [string, 'null'], enum: [ELECTRIC, GAS, DUAL, UNKNOWN, null]}
+      responses: {'201': {$ref: '#/components/responses/case'}, '404': {description: Parent case unavailable}}
+  /cases/{id}/assignee:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: Hand an open repair to an active same-company technician
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, technicianId]
+              properties:
+                version: {type: integer, minimum: 0}
+                technicianId: {type: string, format: uuid}
+                note: {type: [string, 'null'], maxLength: 1000}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Stale case or inactive technician}}
+  /cases/{id}/appliance:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: Link a confirmed appliance to a closed historical case without editing its intake snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, model, confirmed]
+              properties:
+                version: {type: integer, minimum: 0}
+                brand: {type: [string, 'null'], maxLength: 120}
+                model: {type: string, maxLength: 120}
+                serialNumber: {type: [string, 'null'], maxLength: 120}
+                confirmed: {type: boolean, const: true}
+      responses: {'200': {$ref: '#/components/responses/case'}, '403': {description: Company administrator required}}
+  /cases/{id}/returns:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Schedule a return visit and requested parts
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
+      description: The case pauses and resumes at its previous stage when the return visit is started. Reuse the idempotency key after a transport failure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/createReturn'}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Stale case or another open return visit exists}}
+  /cases/{id}/returns/{returnId}:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {$ref: '#/components/parameters/returnId'}
+    patch:
+      summary: Reschedule, cancel, or complete a return visit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, status, clientDate]
+              properties:
+                version: {type: integer, minimum: 0}
+                status: {type: string, enum: [SCHEDULED, CANCELLED, COMPLETED]}
+                clientDate: {type: string, format: date, description: Current calendar date in the technician's local timezone}
+                scheduledFor: {type: string, format: date}
+                reason: {type: string, maxLength: 1000}
+                nextAction: {type: string, maxLength: 1000}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Stale case or invalid return state}}
+  /cases/{id}/returns/{returnId}/parts/{partId}:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {$ref: '#/components/parameters/returnId'}
+      - {name: partId, in: path, required: true, schema: {type: string, format: uuid}}
+    patch:
+      summary: Update requested return-part status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [version, status], properties: {version: {type: integer}, status: {type: string, enum: [REQUESTED, RECEIVED, CANCELLED]}}}
+      responses: {'200': {$ref: '#/components/responses/case'}}
+  /returns:
+    get:
+      summary: List scheduled return visits for the current technician or company administrator
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date, default: '1970-01-01'}}
+        - {name: through, in: query, required: true, schema: {type: string, format: date}}
+        - {name: today, in: query, required: true, description: Current calendar day in the technician's local timezone, used to order overdue and due-today visits, schema: {type: string, format: date}}
+        - {$ref: '#/components/parameters/page'}
+      responses: {'200': {description: Paginated return visits with outstanding parts}}
+  /pilot-outcomes:
+    get:
+      summary: Get the company pilot outcome report grouped by diagnostic procedure revision
+      description: Counts include closed non-demo cases. Cause-match and first-verification metrics include their denominators; cases without a confirmed cause and inconclusive cases have separate counts.
+      responses: {'200': {description: Company-scoped procedure outcome counts}}
+  /cases/{id}/history:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      summary: Get repair history for an appliance or linked callback
+      responses: {'200': {description: History visible to the current technician or company administrator}}
+  /cases/{id}/photos/{photo}:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: photo, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: Download an authorized case photo
+      responses:
+        '200': {description: Normalized photo, content: {image/jpeg: {schema: {type: string, format: binary}}}}
+        '404': {description: Photo unavailable}
+    delete:
+      summary: Remove a photo from a draft
+      responses: {'200': {$ref: '#/components/responses/case'}}
+  /cases/{id}/answers:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: Save a round without starting AI processing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, answers]
+              properties:
+                version: {type: integer, minimum: 0}
+                answers: {$ref: '#/components/schemas/answers'}
+      responses: {'200': {$ref: '#/components/responses/case'}}
+  /cases/{id}/diagnostic:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Start, advance, or retry the diagnostic loop
+      description: Submit the current version and a new request UUID. Reuse the UUID if retrying a transport failure for the same submission. Poll GET /cases/{id} while status is PROCESSING.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, key]
+              properties:
+                version: {type: integer, minimum: 0}
+                key: {type: string, format: uuid}
+                answers: {$ref: '#/components/schemas/answers'}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Stale version or invalid state}}
+  /cases/{id}/transition/{action}:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: action, in: path, required: true, schema: {type: string, enum: [pause, resume, stop, checklist, continue-diagnosis]}}
+    post:
+      summary: Change the case stage
+      description: Continuing diagnosis requires a complete, saved failed verification. It archives the current work log and checklist. Chat-mode cases return to the same conversation with the attempt included as context; legacy cases start a fixed follow-up round. An AI request begins only when the technician sends a new chat message or submits legacy answers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [version], properties: {version: {type: integer}, decision: {type: [string, 'null'], enum: [ACCEPTED, REJECTED, null]}}}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Stale version or invalid state}}
+  /cases/{id}/checklist:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: Save checklist responses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, checks]
+              properties:
+                version: {type: integer}
+                checks:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    required: [status]
+                    properties:
+                      status: {type: string, enum: [CONFIRMED, UNRESOLVED, NOT_APPLICABLE]}
+                      reason: {type: string, maxLength: 500}
+      responses: {'200': {$ref: '#/components/responses/case'}}
+  /cases/{id}/work-log:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: Save the technician's repair log and final verification
+      description: Available in the checklist stage. A draft may omit the work status or verification. Closing requires the work status, a description when work was performed, and notes on the final test or why it could not be performed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, log]
+              properties:
+                version: {type: integer, minimum: 0}
+                log: {$ref: '#/components/schemas/workLog'}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Stale version or invalid case stage}}
+  /cases/{id}/close:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Close a repair with its outcome and AI feedback
+      parameters: [{$ref: '#/components/parameters/version'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome, rating]
+              properties:
+                outcome: {type: string, enum: [RESOLVED, UNRESOLVED, UNVERIFIED]}
+                rating: {type: string, enum: [GOOD, BAD, NOT_USED]}
+                feedback: {type: string, maxLength: 2000}
+      responses: {'200': {$ref: '#/components/responses/case'}, '409': {description: Incomplete checklist or repair log, outcome inconsistent with the verification result, stale version, or invalid state}}
+components:
+  securitySchemes:
+    session: {type: apiKey, in: cookie, name: SESSION}
+  parameters:
+    page: {name: page, in: query, schema: {type: integer, default: 0}}
+    id: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    returnId: {name: returnId, in: path, required: true, schema: {type: string, format: uuid}}
+    idempotencyKey: {name: Idempotency-Key, in: header, required: false, description: Reuse the same UUID when retrying the same create or upload after a transport failure, schema: {type: string, format: uuid}}
+    company: {name: company, in: path, required: true, schema: {type: string, format: uuid}}
+    version: {name: version, in: query, required: true, schema: {type: integer, minimum: 0}}
+  requestBodies:
+    company:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, required: [name, planId, active], properties: {name: {type: string, maxLength: 120}, planId: {type: string, format: uuid}, active: {type: boolean}}}
+    intake:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: []
+            properties:
+              category: {type: [string, 'null'], maxLength: 40}
+              symptoms: {type: [string, 'null'], maxLength: 4000}
+              brand: {type: [string, 'null'], maxLength: 120}
+              model: {type: [string, 'null'], maxLength: 120}
+              fuel: {type: [string, 'null'], enum: [ELECTRIC, GAS, DUAL, UNKNOWN, null]}
+              hazard: {type: [boolean, 'null'], description: Null means not checked or unknown.}
+              serialNumber: {type: [string, 'null'], maxLength: 120}
+              modelConfirmed: {type: boolean, default: false}
+              diagnosticTopic: {type: [string, 'null'], maxLength: 40}
+  responses:
+    conversation:
+      description: Current case-scoped transcript, turn state, linked photos, editable handoff, and verified intake update sources
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/conversation'}
+    case:
+      description: Current case, including the version required for subsequent writes
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [id, jobReference, category, status, version, details, checklist]
+            properties:
+              id: {type: string, format: uuid}
+              jobReference: {type: string, example: SF-00010001}
+              category: {type: [string, 'null']}
+              status: {$ref: '#/components/schemas/status'}
+              version: {type: integer}
+              technicianId: {type: string, format: uuid}
+              createdBy: {type: string, format: uuid}
+              parentCaseId: {type: [string, 'null'], format: uuid}
+              archivedAt: {type: [string, 'null'], format: date-time, description: Set while the closed case is archived}
+              appliance: {type: [object, 'null']}
+              returnVisit: {type: [object, 'null']}
+              returnHistory: {type: array, items: {type: object}}
+              applianceHistory: {type: array, items: {type: object}}
+              assignments: {type: array, items: {type: object}}
+              timeline: {type: array, items: {type: object}}
+              details:
+                type: object
+                description: Intake, photos, diagnostic history, checklist, repair log, feedback, and demo flag
+                properties:
+                  workLog:
+                    type: [object, 'null']
+                    properties:
+                      log: {$ref: '#/components/schemas/workLog'}
+                      author: {type: string, format: uuid}
+                      savedAt: {type: string, format: date-time}
+                  photos:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        contentType: {type: string}
+                        size: {type: integer}
+                        kind: {type: [string, 'null'], enum: [SYMPTOM, MODEL_PLATE, null]}
+                        clientKey: {type: [string, 'null'], format: uuid}
+                  attempts:
+                    type: array
+                    description: Archived attempts in chronological order, including the failed test and saved work.
+                    items:
+                      type: object
+                      properties:
+                        workLog:
+                          type: object
+                          properties:
+                            log: {$ref: '#/components/schemas/workLog'}
+                            author: {type: string, format: uuid}
+                            savedAt: {type: string, format: date-time}
+                        finding: {type: [object, 'null']}
+                        issue: {type: [string, 'null']}
+                        checks: {type: object}
+                        throughRound: {type: integer, minimum: 0}
+                        continuedAt: {type: string, format: date-time}
+              checklist: {type: array, items: {type: object, required: [id, alwaysRequired], properties: {id: {type: string}, alwaysRequired: {type: boolean}}}}
+  schemas:
+    createReturn:
+      type: object
+      required: [version, scheduledFor, clientDate, reason, nextAction, parts]
+      properties:
+        version: {type: integer, minimum: 0}
+        scheduledFor: {type: string, format: date}
+        clientDate: {type: string, format: date, description: Current calendar date in the technician's local timezone}
+        reason: {type: string, maxLength: 1000}
+        nextAction: {type: string, maxLength: 1000}
+        parts:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [name, quantity]
+            properties:
+              name: {type: string, maxLength: 120}
+              partNumber: {type: [string, 'null'], maxLength: 120}
+              quantity: {type: integer, minimum: 1, maximum: 999}
+    workLog:
+      type: object
+      required: [parts, readings]
+      properties:
+        confirmedFault: {type: [string, 'null'], maxLength: 1000}
+        confirmedCauseCode: {type: [string, 'null'], enum: [SETTINGS, INSTALLATION, CLOSURE, COMPONENT, OTHER, null]}
+        workStatus: {type: [string, 'null'], enum: [PERFORMED, NOT_PERFORMED, null]}
+        workPerformed: {type: [string, 'null'], maxLength: 4000}
+        parts:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [name, quantity]
+            properties:
+              name: {type: string, maxLength: 120}
+              partNumber: {type: [string, 'null'], maxLength: 120}
+              quantity: {type: integer, minimum: 1, maximum: 999}
+        readings:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [name]
+            description: Supply at least one recorded reading as a decimal string.
+            properties:
+              name: {type: string, maxLength: 120}
+              unit: {type: [string, 'null'], maxLength: 24}
+              beforeValue: {type: [string, 'null']}
+              afterValue: {type: [string, 'null']}
+        verification:
+          type: [object, 'null']
+          required: [result]
+          properties:
+            result: {type: string, enum: [PASSED, FAILED, NOT_PERFORMED]}
+            notes: {type: [string, 'null'], maxLength: 2000}
+    status: {type: string, enum: [DRAFT, PROCESSING, AWAITING_ANSWERS, AI_ERROR, DIAGNOSIS_PROPOSED, INCONCLUSIVE, DIAGNOSING, PAUSED, CHECKLIST, CLOSED]}
+    conversation:
+      type: object
+      required: [conversationId, caseId, caseVersion, caseStatus, started, imageAnalysisAvailable, photoLimit, photos, messages, handoff, intakeUpdates, contextLimited, requestsUsed, requestLimit, pendingMessageId, hasMoreMessages, nextBeforeSequence]
+      properties:
+        conversationId: {type: [string, 'null'], format: uuid}
+        caseId: {type: string, format: uuid}
+        caseVersion: {type: integer, minimum: 0}
+        caseStatus: {$ref: '#/components/schemas/status'}
+        started: {type: boolean}
+        imageAnalysisAvailable: {type: boolean}
+        photoLimit: {type: integer, minimum: 0}
+        photos: {type: array, items: {$ref: '#/components/schemas/conversationPhoto'}}
+        messages: {type: array, items: {$ref: '#/components/schemas/conversationMessage'}}
+        handoff: {type: [object, 'null'], properties: {summary: {type: [string, 'null']}, possibleCause: {type: [string, 'null']}, evidence: {type: array, items: {type: string}}, unresolved: {type: array, items: {type: string}}, source: {type: string, enum: [TECHNICIAN, AI_ACCEPTED, UNDETERMINED]}, authorId: {type: [string, 'null'], format: uuid}, savedAt: {type: [string, 'null'], format: date-time}}}
+        intakeUpdates: {type: array, items: {$ref: '#/components/schemas/conversationIntakeUpdate'}}
+        contextLimited: {type: boolean}
+        requestsUsed: {type: integer, minimum: 0}
+        requestLimit: {type: integer, minimum: 0}
+        pendingMessageId: {type: [string, 'null'], format: uuid}
+        hasMoreMessages: {type: boolean}
+        nextBeforeSequence: {type: [integer, 'null'], minimum: 1}
+    conversationPhoto:
+      type: object
+      required: [id, contentType, size, kind, clientKey]
+      properties:
+        id: {type: string, format: uuid}
+        contentType: {type: string}
+        size: {type: integer, minimum: 0}
+        kind: {type: [string, 'null'], enum: [SYMPTOM, MODEL_PLATE, null]}
+        clientKey: {type: [string, 'null'], format: uuid}
+    conversationMessage:
+      type: object
+      required: [id, sequence, role, authorId, text, createdAt, state, failureCode, clientKey, attachments, suggestion]
+      properties:
+        id: {type: string, format: uuid}
+        sequence: {type: integer, minimum: 1}
+        role: {type: string, enum: [TECHNICIAN, ASSISTANT, CONTEXT]}
+        authorId: {type: [string, 'null'], format: uuid}
+        text: {type: string}
+        createdAt: {type: string, format: date-time}
+        state: {type: string, enum: [SAVED, QUEUED, RUNNING, ANSWERED, FAILED, CANCELLED]}
+        failureCode: {type: [string, 'null']}
+        clientKey: {type: [string, 'null'], format: uuid}
+        attachments: {type: array, items: {$ref: '#/components/schemas/conversationPhoto'}}
+        suggestion: {type: [object, 'null'], properties: {summary: {type: string}, evidenceMessageIds: {type: array, items: {type: string, format: uuid}}, uncertainty: {type: string}}}
+    conversationIntakeUpdate:
+      type: object
+      required: [id, field, previousValue, value, sourceMessageId, sourcePhotoId, evidenceQuote, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        field: {type: string, enum: [category, brand, model, serialNumber, symptoms]}
+        previousValue: {type: [string, 'null']}
+        value: {type: string}
+        sourceMessageId: {type: string, format: uuid}
+        sourcePhotoId: {type: [string, 'null'], format: uuid, description: Model-read image text; linked to the technician message for review, not independently OCR-verified.}
+        evidenceQuote: {type: string}
+        createdAt: {type: string, format: date-time}
+    answers:
+      type: object
+      description: Answers keyed by question ID. The value depends on the question type. Supply all current questions when submitting a round.
+      maxProperties: 8
+      additionalProperties:
+        type: object
+        required: [status]
+        properties:
+          status: {type: string, enum: [ANSWERED, UNKNOWN, UNAVAILABLE, NOT_PERFORMED]}
+          value: {type: string, maxLength: 1000}
+          reason: {type: string, maxLength: 500}

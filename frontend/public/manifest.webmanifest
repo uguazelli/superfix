@@ -1,0 +1,9 @@
+{
+  "name": "SuperFix Technician Workspace",
+  "short_name": "SuperFix",
+  "start_url": "/repairs",
+  "display": "standalone",
+  "background_color": "#f5f6f3",
+  "theme_color": "#132823",
+  "icons": [{"src": "/superfix.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
+}

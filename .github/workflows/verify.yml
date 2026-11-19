@@ -1,0 +1,26 @@
+name: Verify SuperFix
+on: [push, pull_request]
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start test stack
+        run: |
+          umask 077
+          echo "DATABASE_PASSWORD=$(openssl rand -hex 24)" >> .env
+          echo "BOOTSTRAP_ADMIN_EMAIL=admin@example.test" >> .env
+          echo "BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 4)" >> .env
+          docker compose up --build --wait
+      - name: Check repair workflow
+        run: |
+          set -a
+          . ./.env
+          set +a
+          python3 scripts/smoke.py
+      - name: Print stack logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Remove test stack
+        if: always()
+        run: docker compose down -v

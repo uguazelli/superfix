@@ -1,0 +1,38 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/superfix}
+    username: ${DATABASE_USER:superfix}
+    password: ${DATABASE_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate.ddl-auto: validate
+  session:
+    timeout: 8h
+    jdbc.initialize-schema: never
+  servlet.multipart:
+    max-file-size: 5MB
+    max-request-size: 6MB
+  mvc.problemdetails.enabled: true
+server:
+  servlet.session.cookie:
+    http-only: true
+    secure: ${SECURE_COOKIES:false}
+    same-site: lax
+  error:
+    include-message: never
+management.endpoints.web.exposure.include: health
+superfix:
+  bootstrap:
+    email: ${BOOTSTRAP_ADMIN_EMAIL:}
+    password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+  photos-path: ${PHOTO_STORAGE_PATH:./data/photos}
+  ai:
+    mode: ${AI_PROVIDER:mock}
+    openai-key: ${OPENAI_API_KEY:}
+    openai-model: ${OPENAI_MODEL:}
+    openrouter-key: ${OPENROUTER_API_KEY:}
+    openrouter-model: ${OPENROUTER_MODEL:}
+    image-analysis-enabled: ${AI_IMAGE_ANALYSIS_ENABLED:false}
+    max-chat-requests-per-case: ${AI_MAX_CHAT_REQUESTS_PER_CASE:50}
+  photos:
+    max-per-case: ${PHOTO_MAX_PER_CASE:12}

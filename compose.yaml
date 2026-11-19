@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: superfix
+      POSTGRES_USER: superfix
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U superfix -d superfix]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/superfix
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      PHOTO_STORAGE_PATH: /data/photos
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      AI_IMAGE_ANALYSIS_ENABLED: ${AI_IMAGE_ANALYSIS_ENABLED:-false}
+      AI_MAX_CHAT_REQUESTS_PER_CASE: ${AI_MAX_CHAT_REQUESTS_PER_CASE:-50}
+      PHOTO_MAX_PER_CASE: ${PHOTO_MAX_PER_CASE:-12}
+    volumes:
+      - photos:/data/photos
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:8080/actuator/health]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 15s
+  web:
+    build: ./frontend
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8088}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -qO, /dev/null, http://127.0.0.1:8080/healthz]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+volumes:
+  postgres:
+  photos:

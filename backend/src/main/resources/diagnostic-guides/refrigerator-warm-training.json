@@ -1,0 +1,31 @@
+{
+  "category": "refrigerator",
+  "procedure": {
+    "id": "refrigerator-warm-training",
+    "revision": 1,
+    "model": "SUPERFIX-TRAINING-R1",
+    "complaint": "refrigerator-warm",
+    "synthetic": true,
+    "reviewed": false,
+    "reviewer": null,
+    "reviewedAt": null,
+    "source": null
+  },
+  "modelAliases": ["SUPERFIX-TRAINING-R1"],
+  "questions": [
+    {
+      "id": "freshFoodTemperature",
+      "label": "Enter the already recorded fresh-food compartment temperature.",
+      "type": "NUMBER",
+      "unit": "°C",
+      "choices": []
+    },
+    {
+      "id": "freezerTemperature",
+      "label": "Enter the already recorded freezer compartment temperature.",
+      "type": "NUMBER",
+      "unit": "°C",
+      "choices": []
+    }
+  ]
+}
